@@ -6,7 +6,6 @@ name: Build & Deploy WebGL
 on:
   push:
     branches:
-      - main
       - develop
     paths-ignore:
       - "README.md"
@@ -107,37 +106,6 @@ jobs:
         with:
           targetPlatform: ${{ vars.BUILD_TARGET }}
           buildMethod: BuildScript.BuildWebGL
-
-      #######################################################################
-      # Upload Artifact (Production Only)
-      #######################################################################
-
-      - name: Upload WebGL Build
-        if: github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Portfolio-WebGL-${{ github.run_number }}
-          path: ${{ vars.BUILD_OUTPUT }}
-          retention-days: 2
-
-      #######################################################################
-      # Deploy Production
-      #######################################################################
-
-      - name: Deploy Production
-        if: github.ref == 'refs/heads/main'
-        uses: nwtgck/actions-netlify@v3
-        with:
-          publish-dir: ${{ vars.BUILD_OUTPUT }}
-          production-branch: main
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          deploy-message: |
-            🚀 Production Build #${{ github.run_number }}
-            Branch: ${{ github.ref_name }}
-
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
 
       #######################################################################
       # Deploy Development
