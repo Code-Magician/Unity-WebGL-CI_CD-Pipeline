@@ -10,4 +10,8 @@ public class BuildInfo
     public string buildDate;
     public string unityVersion;
     public string workflow;
+
+    public string buildConfiguration;
+    public string targetPlatform;
+    public string buildMachine;
 }
