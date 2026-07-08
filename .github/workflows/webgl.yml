@@ -20,6 +20,10 @@ jobs:
 
     steps:
 
+      #########################################################################
+      # Checkout
+      #########################################################################
+
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
@@ -31,13 +35,44 @@ jobs:
           git lfs install
           git lfs pull
 
+      #########################################################################
+      # Cache
+      #########################################################################
+
       - name: Cache Unity Library
         uses: actions/cache@v4
         with:
           path: Library
-          key: Library-WebGL-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          key: Library-WebGL-${{ runner.os }}-${{ hashFiles('Packages/packages-lock.json', 'ProjectSettings/ProjectVersion.txt') }}
           restore-keys: |
-            Library-WebGL-
+            Library-WebGL-${{ runner.os }}-
+
+      - name: Cache Package Cache
+        uses: actions/cache@v4
+        with:
+          path: Library/PackageCache
+          key: PackageCache-${{ runner.os }}-${{ hashFiles('Packages/packages-lock.json') }}
+          restore-keys: |
+            PackageCache-${{ runner.os }}-
+
+      - name: Cache Shader Cache
+        uses: actions/cache@v4
+        with:
+          path: Library/ShaderCache
+          key: ShaderCache-${{ runner.os }}-${{ hashFiles('ProjectSettings/ProjectVersion.txt') }}
+          restore-keys: |
+            ShaderCache-${{ runner.os }}-
+
+      #########################################################################
+      # Build Timer
+      #########################################################################
+
+      - name: Record Build Start
+        run: echo "BUILD_START=$(date +%s)" >> $GITHUB_ENV
+
+      #########################################################################
+      # Debug (Temporary)
+      #########################################################################
 
       - name: Print Build Variables
         run: |
@@ -53,6 +88,10 @@ jobs:
           echo "===== DOTween ====="
           ls -lah Assets/Plugins/Demigiant/DOTween
           file Assets/Plugins/Demigiant/DOTween/DOTween.dll || true
+
+      #########################################################################
+      # Unity Build
+      #########################################################################
 
       - name: Build Unity Project
         uses: game-ci/unity-builder@v4
@@ -72,6 +111,21 @@ jobs:
           targetPlatform: WebGL
           buildMethod: BuildScript.BuildWebGL
 
+      #########################################################################
+      # Upload Artifact
+      #########################################################################
+
+      - name: Upload WebGL Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Portfolio-WebGL
+          path: Build/WebGL
+          retention-days: 7
+
+      #########################################################################
+      # Deploy
+      #########################################################################
+
       - name: Deploy to Netlify
         uses: nwtgck/actions-netlify@v3
         with:
@@ -84,3 +138,15 @@ jobs:
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+      #########################################################################
+      # Build Time
+      #########################################################################
+
+      - name: Print Build Time
+        run: |
+          BUILD_END=$(date +%s)
+          echo ""
+          echo "==============================="
+          echo "Build completed in $((BUILD_END - BUILD_START)) seconds"
+          echo "==============================="
