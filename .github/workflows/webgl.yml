@@ -7,9 +7,16 @@
 name: Build & Deploy WebGL
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - Semantic Version
+    types:
+      - completed
     branches:
       - develop
+
+  push:
+    branches:
       - main
 
 permissions:
@@ -22,12 +29,39 @@ permissions:
 #########################################################################
 
 concurrency:
-  group: webgl-${{ github.ref_name }}
+  group: webgl-${{ github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   build:
     name: Build & Deploy
+
+    #######################################################################
+    # Job should run only when:
+    # 1. Semantic Version completed successfully on develop AND original
+    #    commit message starts with major:, minor:, or patch:
+    # 2. OR anything is pushed/merged to main
+    #######################################################################
+
+    if: |
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'develop' &&
+        (
+          startsWith(github.event.workflow_run.head_commit.message, 'major:') ||
+          startsWith(github.event.workflow_run.head_commit.message, 'minor:') ||
+          startsWith(github.event.workflow_run.head_commit.message, 'patch:')
+        ) &&
+        !contains(github.event.workflow_run.head_commit.message, '[skip ci]') &&
+        !contains(github.event.workflow_run.head_commit.message, '[ci skip]')
+      ) ||
+      (
+        github.event_name == 'push' &&
+        github.ref_name == 'main' &&
+        !contains(github.event.head_commit.message, '[skip ci]') &&
+        !contains(github.event.head_commit.message, '[ci skip]')
+      )
 
     runs-on: ubuntu-latest
 
@@ -36,13 +70,52 @@ jobs:
     steps:
 
     #######################################################################
+    # Resolve Branch Info
+    #######################################################################
+
+    - name: Resolve Build Context
+      shell: bash
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+
+          BRANCH_NAME="${{ github.event.workflow_run.head_branch }}"
+          SOURCE_COMMIT_SHA="${{ github.event.workflow_run.head_sha }}"
+          SOURCE_COMMIT_MESSAGE="${{ github.event.workflow_run.head_commit.message }}"
+
+        else
+
+          BRANCH_NAME="${{ github.ref_name }}"
+          SOURCE_COMMIT_SHA="${{ github.sha }}"
+          SOURCE_COMMIT_MESSAGE="${{ github.event.head_commit.message }}"
+
+        fi
+
+        echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+        echo "SOURCE_COMMIT_SHA=$SOURCE_COMMIT_SHA" >> $GITHUB_ENV
+
+        {
+          echo "SOURCE_COMMIT_MESSAGE<<EOF_SOURCE_COMMIT_MESSAGE"
+          echo "$SOURCE_COMMIT_MESSAGE"
+          echo "EOF_SOURCE_COMMIT_MESSAGE"
+        } >> $GITHUB_ENV
+
+        echo "Branch: $BRANCH_NAME"
+        echo "Source Commit: $SOURCE_COMMIT_SHA"
+        echo "Source Commit Message:"
+        echo "$SOURCE_COMMIT_MESSAGE"
+
+    #######################################################################
     # Checkout
+    #
+    # For develop workflow_run, checkout branch name, not workflow_run sha.
+    # Reason: version.yml has just updated .version and pushed it to develop.
+    # Checking out develop gives the latest .version file.
     #######################################################################
 
     - name: Checkout Repository
       uses: actions/checkout@v4
       with:
-        ref: ${{ github.sha }}
+        ref: ${{ github.event.workflow_run.head_branch || github.ref_name }}
         lfs: true
         fetch-depth: 0
 
@@ -52,71 +125,32 @@ jobs:
         git lfs pull
 
     #######################################################################
-    # Read Commit Message
+    # Read Actual Checked Out Commit
     #######################################################################
 
-    - name: Read Commit Message
+    - name: Read Checked Out Commit
       shell: bash
       run: |
-        BRANCH_NAME="${{ github.ref_name }}"
-        COMMIT_SHA="${{ github.sha }}"
-        COMMIT_MESSAGE="$(git log -1 --pretty=%B "$COMMIT_SHA")"
+        CHECKED_OUT_COMMIT_SHA="$(git rev-parse HEAD)"
+        CHECKED_OUT_COMMIT_MESSAGE="$(git log -1 --pretty=%B)"
 
-        echo "Branch: $BRANCH_NAME"
-        echo "Commit: $COMMIT_SHA"
-        echo "Commit Message:"
-        echo "$COMMIT_MESSAGE"
-
-        echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
-        echo "COMMIT_SHA=$COMMIT_SHA" >> $GITHUB_ENV
+        echo "CHECKED_OUT_COMMIT_SHA=$CHECKED_OUT_COMMIT_SHA" >> $GITHUB_ENV
 
         {
-          echo "COMMIT_MESSAGE<<EOF_COMMIT_MESSAGE"
-          echo "$COMMIT_MESSAGE"
-          echo "EOF_COMMIT_MESSAGE"
+          echo "CHECKED_OUT_COMMIT_MESSAGE<<EOF_CHECKED_OUT_COMMIT_MESSAGE"
+          echo "$CHECKED_OUT_COMMIT_MESSAGE"
+          echo "EOF_CHECKED_OUT_COMMIT_MESSAGE"
         } >> $GITHUB_ENV
 
-    #######################################################################
-    # Should Build?
-    #######################################################################
-
-    - name: Detect Build Commit
-      shell: bash
-      run: |
-        BUILD=false
-
-        if [[ "$COMMIT_MESSAGE" == *"[skip ci]"* || "$COMMIT_MESSAGE" == *"[ci skip]"* ]]; then
-
-          echo "Skip CI detected. Build will not run."
-          BUILD=false
-
-        elif [[ "$BRANCH_NAME" == "main" ]]; then
-
-          # Always build production when changes are merged/pushed to main
-          BUILD=true
-
-        elif [[ "$BRANCH_NAME" == "develop" && "$COMMIT_MESSAGE" =~ ^chore\(webgl\): ]]; then
-
-          # Only build development after version.yml creates the version bump commit
-          BUILD=true
-
-        else
-
-          # Any normal develop commit should not build directly.
-          # version.yml will decide whether to bump .version.
-          BUILD=false
-
-        fi
-
-        echo "BUILD=$BUILD" >> $GITHUB_ENV
-        echo "BUILD = $BUILD"
+        echo "Checked Out Commit: $CHECKED_OUT_COMMIT_SHA"
+        echo "Checked Out Commit Message:"
+        echo "$CHECKED_OUT_COMMIT_MESSAGE"
 
     #######################################################################
     # Read Version
     #######################################################################
 
     - name: Read Version
-      if: env.BUILD == 'true'
       shell: bash
       run: |
         VERSION=$(cat "${{ vars.VERSION_FILE }}")
@@ -130,7 +164,6 @@ jobs:
     #######################################################################
 
     - name: Create Build Version
-      if: env.BUILD == 'true'
       shell: bash
       run: |
         if [[ "$BRANCH_NAME" == "develop" ]]; then
@@ -152,7 +185,6 @@ jobs:
     #######################################################################
 
     - name: Cache Unity Library
-      if: env.BUILD == 'true'
       uses: actions/cache@v4
       with:
         path: Library
@@ -165,7 +197,6 @@ jobs:
     #######################################################################
 
     - name: Record Build Start
-      if: env.BUILD == 'true'
       run: echo "BUILD_START=$(date +%s)" >> $GITHUB_ENV
 
     #######################################################################
@@ -173,7 +204,6 @@ jobs:
     #######################################################################
 
     - name: Generate Build Metadata
-      if: env.BUILD == 'true'
       shell: bash
       run: |
         mkdir -p Assets/StreamingAssets
@@ -184,7 +214,8 @@ jobs:
         {
           "version": "$BUILD_VERSION",
           "buildNumber": "${{ github.run_number }}",
-          "commit": "$COMMIT_SHA",
+          "commit": "$CHECKED_OUT_COMMIT_SHA",
+          "sourceCommit": "$SOURCE_COMMIT_SHA",
           "branch": "$BRANCH_NAME",
           "buildDate": "$BUILD_DATE",
           "unityVersion": "${{ vars.UNITY_VERSION }}",
@@ -205,7 +236,6 @@ jobs:
     #######################################################################
 
     - name: Build Unity Project
-      if: env.BUILD == 'true'
       uses: game-ci/unity-builder@v4
       env:
         UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
@@ -220,7 +250,7 @@ jobs:
     #######################################################################
 
     - name: Upload WebGL Build
-      if: env.BUILD == 'true' && env.BRANCH_NAME == 'main'
+      if: env.BRANCH_NAME == 'main'
       uses: actions/upload-artifact@v4
       with:
         name: Portfolio-WebGL-${{ env.BUILD_VERSION }}
@@ -232,7 +262,7 @@ jobs:
     #######################################################################
 
     - name: Deploy Production
-      if: env.BUILD == 'true' && env.BRANCH_NAME == 'main'
+      if: env.BRANCH_NAME == 'main'
       uses: nwtgck/actions-netlify@v3
       with:
         publish-dir: ${{ vars.BUILD_OUTPUT }}
@@ -251,7 +281,7 @@ jobs:
     #######################################################################
 
     - name: Deploy Development
-      if: env.BUILD == 'true' && env.BRANCH_NAME == 'develop'
+      if: env.BRANCH_NAME == 'develop'
       uses: nwtgck/actions-netlify@v3
       with:
         publish-dir: ${{ vars.BUILD_OUTPUT }}
@@ -270,31 +300,17 @@ jobs:
     #######################################################################
 
     - name: Print Build Summary
-      if: env.BUILD == 'true'
       run: |
         BUILD_END=$(date +%s)
 
         echo ""
         echo "=================================================="
-        echo "Branch          : $BRANCH_NAME"
-        echo "Version         : $BUILD_VERSION"
-        echo "Run Number      : ${{ github.run_number }}"
-        echo "Unity Version   : ${{ vars.UNITY_VERSION }}"
-        echo "Build Target    : ${{ vars.BUILD_TARGET }}"
-        echo "Duration        : $((BUILD_END - BUILD_START)) seconds"
-        echo "=================================================="
-
-    #######################################################################
-    # Skipped Build Summary
-    #######################################################################
-
-    - name: Print Skipped Build Summary
-      if: env.BUILD != 'true'
-      run: |
-        echo ""
-        echo "=================================================="
-        echo "Build skipped."
-        echo "Branch          : $BRANCH_NAME"
-        echo "Commit Message  : $COMMIT_MESSAGE"
-        echo "Reason          : Not main and not chore(webgl) version commit."
+        echo "Branch              : $BRANCH_NAME"
+        echo "Version             : $BUILD_VERSION"
+        echo "Run Number          : ${{ github.run_number }}"
+        echo "Unity Version       : ${{ vars.UNITY_VERSION }}"
+        echo "Build Target        : ${{ vars.BUILD_TARGET }}"
+        echo "Source Commit       : $SOURCE_COMMIT_SHA"
+        echo "Checked Out Commit  : $CHECKED_OUT_COMMIT_SHA"
+        echo "Duration            : $((BUILD_END - BUILD_START)) seconds"
         echo "=================================================="
