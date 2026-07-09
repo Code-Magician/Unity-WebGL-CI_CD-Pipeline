@@ -74,6 +74,41 @@ jobs:
           echo "Repository Version = $VERSION"
 
       #######################################################################
+      # Read Latest Commit Message
+      #######################################################################
+
+      - name: Read Commit Message
+        shell: bash
+        run: |
+          COMMIT_MESSAGE="${{ github.event.head_commit.message }}"
+
+          echo "Commit Message:"
+          echo "$COMMIT_MESSAGE"
+
+          echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
+      
+      #######################################################################
+      # Detect Version Increment
+      #######################################################################
+
+      - name: Detect Version Increment
+        shell: bash
+        run: |
+          TYPE="none"
+
+          if [[ "$COMMIT_MESSAGE" =~ ^major: ]]; then
+            TYPE="major"
+          elif [[ "$COMMIT_MESSAGE" =~ ^minor: ]]; then
+            TYPE="minor"
+          elif [[ "$COMMIT_MESSAGE" =~ ^patch: ]]; then
+            TYPE="patch"
+          fi
+
+          echo "Version Increment: $TYPE"
+
+          echo "VERSION_TYPE=$TYPE" >> $GITHUB_ENV
+
+      #######################################################################
       # Cache
       #######################################################################
 
