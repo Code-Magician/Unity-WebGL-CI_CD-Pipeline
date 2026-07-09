@@ -58,7 +58,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          VERSION=$(cat .version)
+          VERSION=$(cat "${{ vars.VERSION_FILE }}")
 
           echo "Current Version: $VERSION"
 
@@ -96,11 +96,11 @@ jobs:
         run: |
           TYPE="none"
 
-          if [[ "$COMMIT_MESSAGE" =~ ^major: ]]; then
+          if [[ "$COMMIT_MESSAGE" =~ ^${{ vars.MAJOR_PREFIX }}: ]]; then
             TYPE="major"
-          elif [[ "$COMMIT_MESSAGE" =~ ^minor: ]]; then
+          elif [[ "$COMMIT_MESSAGE" =~ ^${{ vars.MINOR_PREFIX }}: ]]; then
             TYPE="minor"
-          elif [[ "$COMMIT_MESSAGE" =~ ^patch: ]]; then
+          elif [[ "$COMMIT_MESSAGE" =~ ^${{ vars.PATCH_PREFIX }}: ]]; then
             TYPE="patch"
           fi
 
