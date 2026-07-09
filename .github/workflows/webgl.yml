@@ -1,6 +1,8 @@
-﻿# git commit -m "docs: update README [skip ci]"
-# Use "[skip ci]" in the commit message to skip this workflow.
-
+﻿# To skip this workflow, include either "[skip ci]" or "[ci skip]"
+# anywhere in your commit message.
+#
+# Example:
+# git commit -m "docs: update README [skip ci]"
 name: Build & Deploy WebGL
 
 on:

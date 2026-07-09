@@ -328,6 +328,31 @@ Caches
 
 ---
 
+# Skipping the GitHub Workflow
+
+Sometimes you may only update documentation or repository files and don't want to trigger a new build.
+
+To skip the GitHub Actions workflow, include **`[skip ci]`** or **`[ci skip]`** anywhere in your commit message.
+
+Example:
+
+```bash
+git add .
+
+git commit -m "docs: update README [skip ci]"
+
+git push origin develop
+```
+
+or
+
+```bash
+git commit -m "docs: fix typos [ci skip]"
+```
+
+> **Note:** This only skips the workflow for that specific commit. Your next commit without the skip keyword will trigger the workflow as usual.
+
+
 # Current Features
 
 - Automated Unity WebGL Build
